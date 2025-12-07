@@ -12,11 +12,11 @@ export class BraveCompiler extends Compiler {
 
   constructor(options?: ConstructorParameters<typeof Compiler>[0]) {
     super({
-      ...options,
       cloneMethod: 'direct',
       folder: path.join(import.meta.dir, '..', '..', 'temp', 'brave'),
-      clones: ['brave/brave-browser'],
       cacheClones: true,
+      ...options,
+      clones: ['brave/brave-browser'],
     })
     console.dir({options: this.options}, {depth: null})
   }
