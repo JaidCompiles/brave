@@ -173,15 +173,14 @@ export class Compiler {
     const {cwdExtra, ...bunOptions} = options
     const cwd = cwdExtra ? this.fromHere(...lodash.castArray(cwdExtra)) : this.options.folder
     const commandWithArgs = lodash.castArray(command)
-    const executionResult = await Bun.spawn({
+    const subprocess = Bun.spawn({
       cmd: commandWithArgs,
       cwd,
       stdout: 'inherit',
       stderr: 'inherit',
       ...bunOptions,
     })
-    if (executionResult.exitCode !== 0) {
-      throw new Error(`Command failed (${executionResult.exitCode}): ${commandWithArgs.join(' ')}`)
-    }
+    await subprocess.exited
+    return subprocess
   }
 }

@@ -1,14 +1,17 @@
+import os from 'os'
+
 import * as path from 'forward-slash-path'
 import fs from 'fs-extra'
+import {replaceInFile} from 'replace-in-file'
 
 import {Compiler} from './Compiler.ts'
 
 export class BraveCompiler extends Compiler {
+  braveCoreCacheFolder = path.join(os.tmpdir(), 'node_compiler', 'git', 'brave', 'brave-core')
   buildConfig = 'Release'
   repo = 'brave/brave-browser'
   targetArch = 'x64'
   targetOs = 'win'
-
   constructor(options?: ConstructorParameters<typeof Compiler>[0]) {
     super({
       cloneMethod: 'direct',
@@ -74,15 +77,15 @@ export class BraveCompiler extends Compiler {
     }
     const originalPath = process.env[pathKey].split(';')
     const pathExtra = [
-      'C:/portable/node/24.5.0',
-      'C:/portable/node/24.5.0/node_modules/npm/bin',
+      'C:/portable/node/24.11.1',
+      'C:/portable/node/24.11.1/node_modules/npm/bin',
     ]
     return {
       ...process.env,
       [pathKey]: [...pathExtra, ...originalPath].join(';'),
-      NODE: 'C:/portable/node/24.5.0/node.exe',
-      npm_node_execpath: 'C:/portable/node/24.5.0/node.exe',
-      npm_execpath: 'C:/portable/node/24.5.0/node_modules/npm/bin/npm-cli.js',
+      NODE: 'C:/portable/node/24.11.1/node.exe',
+      npm_node_execpath: 'C:/portable/node/24.11.1/node.exe',
+      npm_execpath: 'C:/portable/node/24.11.1/node_modules/npm/bin/npm-cli.js',
     }
   }
 
@@ -93,14 +96,25 @@ export class BraveCompiler extends Compiler {
 
   async run() {
     await this.init()
+    const cacheFolderExists = await fs.pathExists(this.braveCoreCacheFolder)
+    if (cacheFolderExists) {
+      await replaceInFile({
+        files: this.fromHere(...this.braveBrowserFolderSegments, 'package.json'),
+        from: /https:\/\/github\.com\/brave\/brave-core\.git/g,
+        to: `file://${this.braveCoreCacheFolder}`,
+      })
+    }
     const environment = this.getEnvironment()
-    console.dir({environment}, {depth: null})
-    await this.runCommand(['npm', 'install'], {
+    await this.runCommand(['node', environment.npm_execpath, 'install'], {
       cwdExtra: this.braveBrowserFolderSegments,
       env: environment,
     })
-    await this.runCommand(['npm', 'run', 'init', '--', `--target_os=${this.targetOs}`, `--target_arch=${this.targetArch}`], {
+    await this.runCommand(['node', environment.npm_execpath, 'run', 'init', '--', `--target_os=${this.targetOs}`, `--target_arch=${this.targetArch}`], {
       cwdExtra: this.braveBrowserFolderSegments,
+      env: environment,
+    })
+    await this.runCommand(['node', environment.npm_execpath, 'install'], {
+      cwdExtra: this.braveCoreFolderSegments,
       env: environment,
     })
     // await this.disableBraveLeo()
