@@ -1,0 +1,3 @@
+import type {Merge} from 'type-fest'
+
+export type MergeAll<LowestPriority extends Record<any, unknown> | undefined = undefined, LowPriority extends Record<any, unknown> | undefined = undefined, MediumPriority extends Record<any, unknown> | undefined = undefined, HighPriority extends Record<any, unknown> | undefined = undefined, HighestPriority extends Record<any, unknown> | undefined = undefined> = Merge<Merge<Merge<Merge<LowestPriority extends undefined ? {} : LowestPriority, LowPriority extends undefined ? {} : LowPriority>, MediumPriority extends undefined ? {} : MediumPriority>, HighPriority extends undefined ? {} : HighPriority>, HighestPriority extends undefined ? {} : HighestPriority>
