@@ -18,6 +18,7 @@ export class BraveCompiler extends Compiler {
       clones: ['brave/brave-browser'],
       cacheClones: true,
     })
+    console.dir({options: this.options}, {depth: null})
   }
 
   get braveCoreFolder() {
@@ -29,7 +30,8 @@ export class BraveCompiler extends Compiler {
   }
 
   get targetRepoPath() {
-    return path.join('git', this.repo.split('/')[1])
+    const [owner, name] = this.repo.split('/')
+    return path.join(this.fromHere('git'), owner, name)
   }
 
   async copyBuiltExecutable() {
@@ -76,11 +78,11 @@ export class BraveCompiler extends Compiler {
     })
     await this.disableBraveLeo()
     const gnArgs = [
-      'enable_ai_chat:false',
-      'enable_brave_ai_chat_agent_profile:false',
-      'extra_cflags:["-march=native"]',
-      'extra_cflags_cxx:["-march=native"]',
-      'extra_ldflags:["-march=native"]',
+      'enable_ai_chat=false',
+      'enable_brave_ai_chat_agent_profile=false',
+      'extra_cflags=["-march=native"]',
+      'extra_cflags_cxx=["-march=native"]',
+      'extra_ldflags=["-march=native"]',
     ]
     await this.runCommand([
       'node',

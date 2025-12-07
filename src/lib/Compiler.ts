@@ -2,6 +2,8 @@ import type {InputOptions} from 'lib/package/make-options/src/index.ts'
 import type {Dict, SecondParameter} from 'more-types'
 import type {Arrayable} from 'type-fest'
 
+import os from 'node:os'
+
 import AdmZip from 'adm-zip'
 import * as path from 'forward-slash-path'
 import fs from 'fs-extra'
@@ -29,33 +31,35 @@ const defaultOptions = {
   } as Dict<string>,
   cloneMethod: 'ssh' as 'direct' | 'https' | 'ssh',
   cacheClones: false,
-  cacheFolder: path.fromTemp('node_compiler') as string,
+  cacheFolder: path.join(os.tmpdir(), 'node_compiler'),
 }
 
 export class Compiler {
   options: Options['normalized']
   constructor(options: Options['parameter']) {
-    this.options = makeOptions<Options>(options)
-    console.dir({options: this.options}, {depth: null})
+    this.options = makeOptions<Options>(options, {defaultOptions})
   }
 
   async addEnvironmentVariable(environmentPath: string, key: string, value: string) {
-    await fs.ensureFile(environmentPath)
-    const current = await fs.readFile(environmentPath, 'utf8')
+    const fullPath = path.isAbsolute(environmentPath) ? environmentPath : this.fromHere(environmentPath)
+    await fs.ensureFile(fullPath)
+    const current = await fs.readFile(fullPath, 'utf8')
     const line = `${key}=${value}`
-    const pattern = new RegExp(`^${key}=.*$`, 'm')
+    const safeKey = key.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`)
+    const pattern = new RegExp(`^${safeKey}=.*$`, 'm')
     const next = pattern.test(current) ? current.replace(pattern, line) : `${current.trimEnd()}\n${line}\n`
-    await fs.writeFile(environmentPath, next)
+    await fs.writeFile(fullPath, next)
   }
 
   async applyPatch(filePath: string, search: RegExp | string, replace: string) {
     if (!await this.hasFile(filePath)) {
       return
     }
-    const content = await Bun.file(filePath).text()
+    const fullPath = this.fromHere(filePath)
+    const content = await Bun.file(fullPath).text()
     const rewritten = content.replace(search, replace)
     if (rewritten !== content) {
-      await fs.writeFile(filePath, rewritten)
+      await fs.writeFile(fullPath, rewritten)
     }
   }
 
@@ -64,28 +68,31 @@ export class Compiler {
    *
    * If cache is enabled, will also keep an untouched copy in $TEMP/node_compiler/git/{owner}/{repo}
    */
-  async cloneGithubRepo(slug: string, method?: 'direct' | 'https' | 'ssh') {
-    const cacheGitFolder = path.join(this.options.cacheFolder, 'git')
-    const realGitFolder = this.fromHere('git')
-    const parentFolder = this.options.cacheClones ? cacheGitFolder : realGitFolder
-    const targetFolder = path.join(parentFolder, slug.split('/')[1])
+  async cloneGithubRepo(slug: string, method: 'direct' | 'https' | 'ssh' = this.options.cloneMethod) {
+    const [owner, repo] = slug.split('/')
+    if (!repo) {
+      throw new Error(`Invalid slug: ${slug}`)
+    }
+    const projectTarget = this.getRepoFolder(slug)
+    const cacheTarget = this.getRepoFolder(slug, 'cache')
+    const downloadTarget = this.options.cacheClones ? cacheTarget : projectTarget
     if (this.options.cacheClones) {
-      const exists = await fs.pathExists(this.fromHere(`git_cache/${slug.split('/')[1]}`))
-      if (exists) {
-        await fs.copy(this.fromHere(`git_cache/${slug.split('/')[1]}`), this.fromHere(`git/${slug.split('/')[1]}`))
+      if (await fs.pathExists(cacheTarget)) {
+        await fs.emptyDir(projectTarget)
+        await fs.copy(cacheTarget, projectTarget)
         console.log(`Used cached clone for ${slug}`)
         return
       }
     }
-    await fs.emptyDir(targetFolder)
-    if (method === 'ssh') {
-      await this.runCommand(['git', 'clone', `ssh://git@github.com/${slug}.git`], {
-        cwdExtra: 'git',
-      })
-    } else if (method === 'https') {
-      await this.runCommand(['git', 'clone', `https://github.com/${slug}.git`], {
-        cwdExtra: 'git',
-      })
+    await fs.emptyDir(downloadTarget)
+    const useGit = method === 'ssh' || method === 'https'
+    if (useGit) {
+      const url = method === 'ssh' ? `ssh://git@github.com/${slug}.git` : `https://github.com/${slug}.git`
+      const args = ['git', 'clone', url, downloadTarget]
+      for (const [key, value] of Object.entries(this.options.gitOptions)) {
+        args.push('-c', `${key}=${value}`)
+      }
+      await this.runCommand(args)
     } else {
       const url = `https://github.com/${slug}/archive/HEAD.zip`
       const response = await fetch(url)
@@ -94,28 +101,45 @@ export class Compiler {
       }
       const buffer = await response.arrayBuffer()
       const zip = new AdmZip(Buffer.from(buffer))
-      const temporaryFolder = path.join(parentFolder, `temp-${Date.now()}`)
-      zip.extractAllTo(temporaryFolder, true)
-      const entries = await fs.readdir(temporaryFolder)
+      const temporaryExtractFolder = path.join(path.dirname(downloadTarget), `temp-${Date.now()}`)
+      await fs.ensureDir(temporaryExtractFolder)
+      zip.extractAllTo(temporaryExtractFolder, true)
+      const entries = await fs.readdir(temporaryExtractFolder)
       if (entries.length === 1) {
-        const rootPath = path.join(temporaryFolder, entries[0])
+        const rootPath = path.join(temporaryExtractFolder, entries[0])
         const rootStats = await fs.stat(rootPath)
         if (rootStats.isDirectory()) {
-          await fs.copy(rootPath, targetFolder)
-          await fs.remove(temporaryFolder)
-          return
+          await fs.copy(rootPath, downloadTarget)
+        } else {
+          await fs.copy(temporaryExtractFolder, downloadTarget)
         }
+      } else {
+        await fs.copy(temporaryExtractFolder, downloadTarget)
       }
-      await fs.copy(temporaryFolder, targetFolder)
-      await fs.remove(temporaryFolder)
+      await fs.remove(temporaryExtractFolder)
     }
     if (this.options.cacheClones) {
-      await fs.copy(this.fromHere(`git_cache/${slug.split('/')[1]}`), this.fromHere(`git/${slug.split('/')[1]}`))
+      await fs.emptyDir(projectTarget)
+      await fs.copy(cacheTarget, projectTarget)
     }
   }
 
   fromHere(...pathRelative: Array<string>) {
     return path.join(this.options.folder, ...pathRelative)
+  }
+
+  getRepoFolder(repo: [string, string] | string, role: 'cache' | 'real' = 'real') {
+    let owner: string
+    let name: string
+    if (typeof repo === 'string') {
+      [owner, name] = repo.split('/')
+    } else {
+      [owner, name] = repo
+    }
+    if (role === 'cache') {
+      return path.join(this.options.cacheFolder, 'git', owner, name)
+    }
+    return this.fromHere('git', owner, name)
   }
 
   async hasFile(pathRelative: string) {
@@ -127,9 +151,6 @@ export class Compiler {
     if (this.options.clones) {
       const gitFolder = this.fromHere('git')
       await fs.emptyDir(gitFolder)
-      for (const [key, value] of Object.entries(this.options.gitOptions)) {
-        await this.runCommand(['git', 'config', '--local', key, value], {cwdExtra: 'git'})
-      }
       const clones = lodash.castArray(this.options.clones)
       for (const slug of clones) {
         await this.cloneGithubRepo(slug)
@@ -142,14 +163,16 @@ export class Compiler {
   }
 
   async runCommand(command: Arrayable<string>, options: RunCommandOptions = {}) {
-    const cwd = options.cwdExtra ? this.fromHere(options.cwdExtra) : this.options.folder
+    const {cwdExtra, ...bunOptions} = options
+    const cwd = cwdExtra ? this.fromHere(cwdExtra) : this.options.folder
+    await fs.ensureDir(cwd)
     const commandWithArgs = lodash.castArray(command)
     const subprocess = Bun.spawn({
       cmd: commandWithArgs,
       cwd,
       stdout: 'inherit',
       stderr: 'inherit',
-      ...options,
+      ...bunOptions,
     })
     const exitCode = await subprocess.exited
     if (exitCode !== 0) {
