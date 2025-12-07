@@ -37,7 +37,10 @@ const defaultOptions = {
 export class Compiler {
   options: Options['normalized']
   constructor(options: Options['parameter']) {
-    this.options = makeOptions<Options>(options, {defaultOptions})
+    this.options = makeOptions<Options>(options, {
+      requiredKeys: ['folder'],
+      defaultOptions,
+    })
   }
 
   async addEnvironmentVariable(environmentPath: string, key: string, value: string) {
