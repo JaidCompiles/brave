@@ -12,7 +12,7 @@ import * as lodash from 'lodash-es'
 import {makeOptions} from 'lib/package/make-options/src/index.ts'
 
 export type RunCommandOptions = Omit<NonNullable<SecondParameter<typeof Bun['spawn']>>, 'cmd' | 'cwd'> & {
-  cwdExtra?: string
+  cwdExtra?: Arrayable<string>
 }
 
 type Options = InputOptions<{
@@ -54,15 +54,16 @@ export class Compiler {
     await fs.writeFile(fullPath, next)
   }
 
-  async applyPatch(filePath: string, search: RegExp | string, replace: string) {
-    if (!await this.hasFile(filePath)) {
+  async applyPatch(fileRelative: Arrayable<string>, search: RegExp | string, replace: string) {
+    const file = this.fromHere(...lodash.castArray(fileRelative))
+    const exists = await fs.pathExists(file)
+    if (!exists) {
       return
     }
-    const fullPath = this.fromHere(filePath)
-    const content = await Bun.file(fullPath).text()
+    const content = await Bun.file(file).text()
     const rewritten = content.replace(search, replace)
     if (rewritten !== content) {
-      await fs.writeFile(fullPath, rewritten)
+      await fs.writeFile(file, rewritten)
     }
   }
 
@@ -128,6 +129,9 @@ export class Compiler {
   }
 
   fromHere(...pathRelative: Array<string>) {
+    if (pathRelative.length === 1 && path.isAbsolute(pathRelative[0])) {
+      return pathRelative[0]
+    }
     return path.join(this.options.folder, ...pathRelative)
   }
 
@@ -167,19 +171,17 @@ export class Compiler {
 
   async runCommand(command: Arrayable<string>, options: RunCommandOptions = {}) {
     const {cwdExtra, ...bunOptions} = options
-    const cwd = cwdExtra ? this.fromHere(cwdExtra) : this.options.folder
-    await fs.ensureDir(cwd)
+    const cwd = cwdExtra ? this.fromHere(...lodash.castArray(cwdExtra)) : this.options.folder
     const commandWithArgs = lodash.castArray(command)
-    const subprocess = Bun.spawn({
+    const executionResult = await Bun.spawn({
       cmd: commandWithArgs,
       cwd,
       stdout: 'inherit',
       stderr: 'inherit',
       ...bunOptions,
     })
-    const exitCode = await subprocess.exited
-    if (exitCode !== 0) {
-      throw new Error(`Command failed (${exitCode}): ${commandWithArgs.join(' ')}`)
+    if (executionResult.exitCode !== 0) {
+      throw new Error(`Command failed (${executionResult.exitCode}): ${commandWithArgs.join(' ')}`)
     }
   }
 }
