@@ -22,9 +22,11 @@
   },
   "dependencies": {
     "adm-zip": "^0.5.16",
+    "dedent": "^1.7.0",
     "forward-slash-path": "^0.3.0",
     "fs-extra": "^11.3.2",
     "lodash-es": "^4.17.21",
-    "replace-in-file": "^8.4.0"
+    "replace-in-file": "^8.4.0",
+    "zeug": "^2.1.0"
   }
 }
