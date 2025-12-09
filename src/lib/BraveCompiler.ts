@@ -40,6 +40,9 @@ export class BraveCompiler extends Compiler {
     rewards_grant_dev_endpoint: 'dummy',
     rewards_grant_staging_endpoint: 'dummy',
     rewards_grant_prod_endpoint: 'dummy',
+    extra_cflags: ['-march=native'],
+    extra_cflags_cxx: ['-march=native'],
+    extra_ldflags: ['-march=native'],
   }
   braveBrowserFolder: string
   braveCoreCacheFolder = path.join(os.tmpdir(), 'node_compiler', 'git', 'brave', 'brave-core')
