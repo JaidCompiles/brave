@@ -9,3 +9,4 @@ Brave Browser compiled with personal changes
 - Removed Brave Sync
 - Removed Memory Saver
 - Changed default of setting “Enable Wide Address Bar” (disabled → enabled)
+- Changed default of setting “Continue running background apps when Brave is closed” (enabled → disabled)

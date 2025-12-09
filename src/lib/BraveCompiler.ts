@@ -93,7 +93,11 @@ export class BraveCompiler extends Compiler {
     debug('Disabling Memory Saver (High Efficiency Mode)')
     await this.applyPatch(this.fromChromiumFolder('components', 'performance_manager', 'public', 'features.cc'), /BASE_FEATURE\(\s*kHighEfficiencyModeAvailable\s*,\s*base::FEATURE_ENABLED_BY_DEFAULT\s*\);/, 'BASE_FEATURE(kHighEfficiencyModeAvailable, base::FEATURE_DISABLED_BY_DEFAULT);')
     debug('Enabling Wide Address Bar by default')
-    await this.applyPatch(this.fromBraveCoreFolder('browser', 'brave_profile_prefs.cc'), /registry->RegisterBooleanPref\(kLocationBarIsWide,\s*false\);/, 'registry→RegisterBooleanPref(kLocationBarIsWide, true);')
+    // eslint-disable-next-line unicorn/string-content
+    await this.applyPatch(this.fromBraveCoreFolder('browser', 'brave_profile_prefs.cc'), /->RegisterBooleanPref\(kLocationBarIsWide,\s*false\)/, '->RegisterBooleanPref(kLocationBarIsWide, true)')
+    debug('Disabling Background Mode by default')
+    // eslint-disable-next-line unicorn/string-content
+    await this.applyPatch(this.fromChromiumFolder('chrome', 'browser', 'background', 'extensions', 'background_mode_manager.cc'), /->RegisterBooleanPref\(prefs::kBackgroundModeEnabled,\s*true\)/, '->RegisterBooleanPref(prefs::kBackgroundModeEnabled, false)')
   }
 
   async disableBraveLeo() {
