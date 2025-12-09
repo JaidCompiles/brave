@@ -40,9 +40,9 @@ export class BraveCompiler extends Compiler {
     rewards_grant_dev_endpoint: 'dummy',
     rewards_grant_staging_endpoint: 'dummy',
     rewards_grant_prod_endpoint: 'dummy',
-    extra_cflags: ['-march=native'],
-    extra_cflags_cxx: ['-march=native'],
-    extra_ldflags: ['-march=native'],
+    extra_cflags: ['-march=znver2'],
+    extra_cflags_cxx: ['-march=znver2'],
+    extra_ldflags: ['-march=znver2'],
   }
   braveBrowserFolder: string
   braveCoreCacheFolder = path.join(os.tmpdir(), 'node_compiler', 'git', 'brave', 'brave-core')
@@ -87,10 +87,6 @@ export class BraveCompiler extends Compiler {
     }, {depth: null})
   }
 
-  get outputFile() {
-    return this.fromHere('..', 'out', 'brave.exe')
-  }
-
   async applyCustomizations() {
     debug('Disabling Brave Sync')
     await this.applyPatch(this.fromBraveCoreFolder('components', 'brave_sync', 'features.cc'), /BASE_FEATURE\(\s*kBraveSync\s*,\s*base::FEATURE_ENABLED_BY_DEFAULT\s*\);/, 'BASE_FEATURE(kBraveSync, base::FEATURE_DISABLED_BY_DEFAULT);')
@@ -98,13 +94,6 @@ export class BraveCompiler extends Compiler {
     await this.applyPatch(this.fromChromiumFolder('components', 'performance_manager', 'public', 'features.cc'), /BASE_FEATURE\(\s*kHighEfficiencyModeAvailable\s*,\s*base::FEATURE_ENABLED_BY_DEFAULT\s*\);/, 'BASE_FEATURE(kHighEfficiencyModeAvailable, base::FEATURE_DISABLED_BY_DEFAULT);')
     debug('Enabling Wide Address Bar by default')
     await this.applyPatch(this.fromBraveCoreFolder('browser', 'brave_profile_prefs.cc'), /registry->RegisterBooleanPref\(kLocationBarIsWide,\s*false\);/, 'registry→RegisterBooleanPref(kLocationBarIsWide, true);')
-  }
-
-  async copyBuiltExecutable() {
-    const inputFile = this.fromChromiumFolder('out', this.buildConfig, 'brave.exe')
-    const outputFolder = path.dirname(this.outputFile)
-    await fs.ensureDir(outputFolder)
-    await fs.copyFile(inputFile, this.outputFile)
   }
 
   async disableBraveLeo() {
@@ -169,9 +158,13 @@ export class BraveCompiler extends Compiler {
       const optionValue = JSON.stringify(value)
       return ['--gn', `${optionKey}:${optionValue}`]
     })
-    await this.runCommand([this.nodeExecutableFile, this.npmScriptFile, 'run', 'build', '--', this.buildConfig, `--target_os=${this.targetOs}`, `--target_arch=${this.targetArch}`, ...gnArgs, '--ninja', 'j:1'], {
+    await this.runCommand([this.nodeExecutableFile, this.npmScriptFile, 'run', 'build', '--', this.buildConfig, `--target_os=${this.targetOs}`, `--target_arch=${this.targetArch}`, ...gnArgs], {
       cwdExtra: this.braveCoreFolder,
     })
-    await this.copyBuiltExecutable()
+    const outputFile = this.fromChromiumFolder('out', this.buildConfig, 'brave.exe')
+    const outputFileExists = await fs.pathExists(outputFile)
+    if (!outputFileExists) {
+      throw new Error(`Build completed but output file not found: ${outputFile}`)
+    }
   }
 }
