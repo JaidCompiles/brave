@@ -98,10 +98,12 @@ export class BraveCompiler extends Compiler {
     debug('Disabling Background Mode by default')
     // eslint-disable-next-line unicorn/string-content
     await this.applyPatch(this.fromChromiumFolder('chrome', 'browser', 'background', 'extensions', 'background_mode_manager.cc'), /->RegisterBooleanPref\(prefs::kBackgroundModeEnabled,\s*true\)/, '->RegisterBooleanPref(prefs::kBackgroundModeEnabled, false)')
-  }
-
-  async disableBraveLeo() {
-    await this.patchAiChatFeature()
+    {
+      const file = path.join(this.braveCoreFolder, 'components', 'ai_chat', 'core', 'common', 'features.cc')
+      const from = /BASE_FEATURE\(\s*kAIChat\s*,\s*base::FEATURE_ENABLED_BY_DEFAULT\s*\);/
+      const to = 'BASE_FEATURE(kAIChat, base::FEATURE_DISABLED_BY_DEFAULT);'
+      await this.applyPatch(file, from, to)
+    }
   }
 
   fromBraveBrowserFolder(...fileRelative: Array<string>) {
@@ -115,14 +117,6 @@ export class BraveCompiler extends Compiler {
   fromChromiumFolder(...fileRelative: Array<string>) {
     return path.join(this.chromiumFolder, ...fileRelative)
   }
-
-  async patchAiChatFeature() {
-    const file = path.join(this.braveCoreFolder, 'components', 'ai_chat', 'core', 'common', 'features.cc')
-    const from = /BASE_FEATURE\(\s*kAIChat\s*,\s*base::FEATURE_ENABLED_BY_DEFAULT\s*\);/
-    const to = 'BASE_FEATURE(kAIChat, base::FEATURE_DISABLED_BY_DEFAULT);'
-    await this.applyPatch(file, from, to)
-  }
-
   async run() {
     await this.init()
     await this.applyPatch(this.fromBraveBrowserFolder('scripts', 'init.js'), "util.run(npmCommand, ['install'], { cwd: braveCoreDir })", "process.exit(0); // util.run(npmCommand, ['install'], { cwd: braveCoreDir })")
@@ -142,21 +136,8 @@ export class BraveCompiler extends Compiler {
     await this.runCommand([this.nodeExecutableFile, this.npmScriptFile, 'install'], {
       cwdExtra: this.braveCoreFolder,
     })
-    debug('Initializing src as a git repo to satisfy gclient')
-    await this.runCommand(['git', 'init'], {cwdExtra: this.fromChromiumFolder()})
-    await this.runCommand(['git', 'remote', 'add', 'origin', 'https://github.com/brave/chromium'], {cwdExtra: this.fromChromiumFolder()})
-    await this.runCommand(['git', 'commit', '--allow-empty', '-m', 'init'], {cwdExtra: this.fromChromiumFolder()})
-    debug('Cloning depot_tools manually and patch git.bat')
-    const depotToolsFolder = this.fromBraveCoreFolder('vendor', 'depot_tools')
-    await this.runCommand(['git', 'clone', 'https://chromium.googlesource.com/chromium/tools/depot_tools.git', depotToolsFolder])
-    await this.runCommand(['cmd.exe', '/c', path.join(depotToolsFolder, 'bootstrap', 'win_tools.bat')])
-    await fs.outputFile(path.join(depotToolsFolder, 'git.bat'), '@echo off\ngit.exe %*')
-    await this.runCommand([this.nodeExecutableFile, 'src/brave/build/commands/scripts/sync.js', '--', '--init', `--target_os=${this.targetOs}`, `--target_arch=${this.targetArch}`], {
-      cwdExtra: this.braveBrowserFolder,
-    })
     await this.applyCustomizations()
     await this.patchEnvFile(this.fromBraveCoreFolder('.env'))
-    await this.disableBraveLeo()
     const gnArgs = Object.entries(BraveCompiler.gnOptions).flatMap(([key, value]) => {
       const optionKey = key
       const optionValue = JSON.stringify(value)
