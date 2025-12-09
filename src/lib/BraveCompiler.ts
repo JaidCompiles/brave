@@ -89,21 +89,36 @@ export class BraveCompiler extends Compiler {
 
   async applyCustomizations() {
     debug('Disabling Brave Sync')
-    await this.applyPatch(this.fromBraveCoreFolder('components', 'brave_sync', 'features.cc'), /BASE_FEATURE\(\s*kBraveSync\s*,\s*base::FEATURE_ENABLED_BY_DEFAULT\s*\);/, 'BASE_FEATURE(kBraveSync, base::FEATURE_DISABLED_BY_DEFAULT);')
+    await this.applyPatch({
+      files: this.fromBraveCoreFolder('components', 'brave_sync', 'features.cc'),
+      from: /BASE_FEATURE\(\s*kBraveSync\s*,\s*base::FEATURE_ENABLED_BY_DEFAULT\s*\)/,
+      to: 'BASE_FEATURE(kBraveSync, base::FEATURE_DISABLED_BY_DEFAULT)',
+    })
     debug('Disabling Memory Saver (High Efficiency Mode)')
-    await this.applyPatch(this.fromChromiumFolder('components', 'performance_manager', 'public', 'features.cc'), /BASE_FEATURE\(\s*kHighEfficiencyModeAvailable\s*,\s*base::FEATURE_ENABLED_BY_DEFAULT\s*\);/, 'BASE_FEATURE(kHighEfficiencyModeAvailable, base::FEATURE_DISABLED_BY_DEFAULT);')
+    await this.applyPatch({
+      files: this.fromChromiumFolder('components', 'performance_manager', 'public', 'features.cc'),
+      from: /BASE_FEATURE\(\s*kHighEfficiencyModeAvailable\s*,\s*base::FEATURE_ENABLED_BY_DEFAULT\s*\)/,
+      to: 'BASE_FEATURE(kHighEfficiencyModeAvailable, base::FEATURE_DISABLED_BY_DEFAULT)',
+    })
     debug('Enabling Wide Address Bar by default')
-    // eslint-disable-next-line unicorn/string-content
-    await this.applyPatch(this.fromBraveCoreFolder('browser', 'brave_profile_prefs.cc'), /->RegisterBooleanPref\(kLocationBarIsWide,\s*false\)/, '->RegisterBooleanPref(kLocationBarIsWide, true)')
+    await this.applyPatch({
+      files: this.fromBraveCoreFolder('browser', 'brave_profile_prefs.cc'),
+      from: /->RegisterBooleanPref\(kLocationBarIsWide,\s*false\)/,
+            // eslint-disable-next-line unicorn/string-content
+      to: '->RegisterBooleanPref(kLocationBarIsWide, true)',
+    })
     debug('Disabling Background Mode by default')
-    // eslint-disable-next-line unicorn/string-content
-    await this.applyPatch(this.fromChromiumFolder('chrome', 'browser', 'background', 'extensions', 'background_mode_manager.cc'), /->RegisterBooleanPref\(prefs::kBackgroundModeEnabled,\s*true\)/, '->RegisterBooleanPref(prefs::kBackgroundModeEnabled, false)')
-    {
-      const file = path.join(this.braveCoreFolder, 'components', 'ai_chat', 'core', 'common', 'features.cc')
-      const from = /BASE_FEATURE\(\s*kAIChat\s*,\s*base::FEATURE_ENABLED_BY_DEFAULT\s*\);/
-      const to = 'BASE_FEATURE(kAIChat, base::FEATURE_DISABLED_BY_DEFAULT);'
-      await this.applyPatch(file, from, to)
-    }
+    await this.applyPatch({
+      files: this.fromChromiumFolder('chrome', 'browser', 'background', 'extensions', 'background_mode_manager.cc'),
+      from: /->RegisterBooleanPref\(prefs::kBackgroundModeEnabled,\s*true\)/,
+      // eslint-disable-next-line unicorn/string-content
+      to: '->RegisterBooleanPref(prefs::kBackgroundModeEnabled, false)',
+    })
+    await this.applyPatch({
+      files: this.fromBraveCoreFolder('components', 'ai_chat', 'core', 'common', 'features.cc'),
+      from: /BASE_FEATURE\(\s*kAIChat\s*,\s*base::FEATURE_ENABLED_BY_DEFAULT\s*\)/,
+      to: 'BASE_FEATURE(kAIChat, base::FEATURE_DISABLED_BY_DEFAULT)',
+    })
   }
 
   fromBraveBrowserFolder(...fileRelative: Array<string>) {
@@ -119,13 +134,21 @@ export class BraveCompiler extends Compiler {
   }
   async run() {
     await this.init()
-    await this.applyPatch(this.fromBraveBrowserFolder('scripts', 'init.js'), "util.run(npmCommand, ['install'], { cwd: braveCoreDir })", "process.exit(0); // util.run(npmCommand, ['install'], { cwd: braveCoreDir })")
+    await this.applyPatch({
+      files: this.fromBraveBrowserFolder('scripts', 'init.js'),
+      from: "util.run(npmCommand, ['install'], { cwd: braveCoreDir })",
+      to: "process.exit(0); // util.run(npmCommand, ['install'], { cwd: braveCoreDir })",
+    })
     const cacheFolderExists = await fs.pathExists(this.braveCoreCacheFolder)
     if (cacheFolderExists) {
       const file = this.fromBraveBrowserFolder('package.json')
       const from = /https:\/\/github\.com\/brave\/brave-core\.git/g
       const to = `file://${this.braveCoreCacheFolder}`
-      await this.applyPatch(file, from, to)
+      await this.applyPatch({
+        files: file,
+        from,
+        to,
+      })
     }
     await this.runCommand([this.nodeExecutableFile, this.npmScriptFile, 'install'], {
       cwdExtra: this.braveBrowserFolder,

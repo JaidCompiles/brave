@@ -1,5 +1,5 @@
 import type {InputOptions} from 'lib/package/make-options/src/index.ts'
-import type {Dict, SecondParameter} from 'more-types'
+import type {Dict, FirstParameter, SecondParameter} from 'more-types'
 import type {Arrayable} from 'type-fest'
 
 import os from 'node:os'
@@ -9,6 +9,7 @@ import dedent from 'dedent'
 import * as path from 'forward-slash-path'
 import fs from 'fs-extra'
 import * as lodash from 'lodash-es'
+import {replaceInFile} from 'replace-in-file'
 import {renderHandlebars} from 'zeug'
 
 import {EnvironmentVariables} from 'lib/EnvironmentVariables.ts'
@@ -72,17 +73,12 @@ export class Compiler {
     await fs.writeFile(fullPath, next)
   }
 
-  async applyPatch(fileRelative: Arrayable<string>, search: RegExp | string, replace: string) {
-    const file = this.fromHere(...lodash.castArray(fileRelative))
-    const exists = await fs.pathExists(file)
-    if (!exists) {
-      return
-    }
-    const content = await Bun.file(file).text()
-    const rewritten = content.replace(search, replace)
-    if (rewritten !== content) {
-      await fs.writeFile(file, rewritten)
-    }
+  async applyPatch(options: FirstParameter<typeof replaceInFile>) {
+    const filesResolved = lodash.castArray(options.files).map(fileRelative => this.fromHere(fileRelative))
+    await replaceInFile({
+      ...options,
+      files: filesResolved,
+    })
   }
 
   /**
