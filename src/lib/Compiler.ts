@@ -12,6 +12,7 @@ import * as lodash from 'lodash-es'
 import {renderHandlebars} from 'zeug'
 
 import {EnvironmentVariables} from 'lib/EnvironmentVariables.ts'
+import * as ansi from 'lib/package/ansi-sequences/src/index.ts'
 import {makeOptions} from 'lib/package/make-options/src/index.ts'
 
 export type RunCommandOptions = Omit<NonNullable<SecondParameter<typeof Bun['spawn']>>, 'cmd' | 'cwd'> & {
@@ -58,21 +59,6 @@ export class Compiler {
     for (const [key, value] of Object.entries(this.options.environmentVariables ?? {})) {
       this.environmentVariables.set(key, value)
     }
-  }
-
-  async patchEnvFileWith(fileRelative: string, environmentVariables: EnvironmentVariables) {
-    const file = this.fromHere(fileRelative)
-    const originalContents = await fs.readFile(file, 'utf8')
-    const originalEnv = EnvironmentVariables.fromEnvContents(originalContents)
-    const mergedEnv = EnvironmentVariables.merge(originalEnv, environmentVariables)
-    const newContents = mergedEnv.toEnvContents()
-    if (newContents !== originalContents) {
-      await fs.writeFile(file, newContents)
-    }
-  }
-
-  async patchEnvFile(fileRelative: string) {
-    return this.patchEnvFileWith(fileRelative, this.environmentVariables)
   }
 
   async addEnvironmentVariable(environmentPath: string, key: string, value: string) {
@@ -210,6 +196,21 @@ export class Compiler {
     await fs.outputFile(file, content)
   }
 
+  async patchEnvFile(fileRelative: string) {
+    return this.patchEnvFileWith(fileRelative, this.environmentVariables)
+  }
+
+  async patchEnvFileWith(fileRelative: string, environmentVariables: EnvironmentVariables) {
+    const file = this.fromHere(fileRelative)
+    const originalContents = await fs.readFile(file, 'utf8')
+    const originalEnvironment = EnvironmentVariables.fromEnvContents(originalContents)
+    const mergedEnvironment = EnvironmentVariables.merge(originalEnvironment, environmentVariables)
+    const newContents = mergedEnvironment.toEnvContents()
+    if (newContents !== originalContents) {
+      await fs.writeFile(file, newContents)
+    }
+  }
+
   async readFile(fileRelative: string) {
     const file = Bun.file(this.fromHere(fileRelative))
     return file.text()
@@ -253,6 +254,7 @@ export class Compiler {
     const {cwdExtra, ...bunOptions} = options
     const cwd = cwdExtra ? this.fromHere(...lodash.castArray(cwdExtra)) : this.options.folder
     const commandWithArgs = lodash.castArray(command)
+    console.log(ansi.command(commandWithArgs))
     const environmentVariables = {
       ...this.environmentVariables.toFinalStringObject(),
       ...bunOptions.env,

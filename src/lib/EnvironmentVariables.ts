@@ -87,10 +87,24 @@ export class EnvironmentVariables extends Map<string, boolean | number | string>
   }
   getPath(splitter = EnvironmentVariables.pathSplitter) {
     const value = this.get(EnvironmentVariables.pathKey)
-    if (typeof value !== 'string') {
-      return []
+    if (typeof value === 'string') {
+      return EnvironmentVariables.splitPaths(value, splitter)
     }
-    return EnvironmentVariables.splitPaths(value, splitter)
+    const environmentValue = process.env[EnvironmentVariables.pathKey]
+    if (typeof environmentValue === 'string') {
+      return EnvironmentVariables.splitPaths(environmentValue, splitter)
+    }
+    return []
+  }
+  prependPathItem(item: Arrayable<string>, splitter = EnvironmentVariables.pathSplitter) {
+    const currentPath = this.getPath(splitter)
+    const isEmpty = currentPath.length === 0
+    if (isEmpty) {
+      this.setPath(item, splitter)
+      return
+    }
+    currentPath.unshift(...Array.isArray(item) ? item : [item])
+    this.setPath(currentPath, splitter)
   }
   setPath(value: Arrayable<string>, splitter = EnvironmentVariables.pathSplitter) {
     this.set(EnvironmentVariables.pathKey, Array.isArray(value) ? value.join(splitter) : value)

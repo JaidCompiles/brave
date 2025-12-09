@@ -1,10 +1,12 @@
 import os from 'os'
+import * as util from 'util'
 
 import * as path from 'forward-slash-path'
 import fs from 'fs-extra'
-import {replaceInFile} from 'replace-in-file'
 
 import {Compiler} from './Compiler.ts'
+
+const debug = util.debuglog('BraveCompiler')
 
 export class BraveCompiler extends Compiler {
   static gnOptions = {
@@ -38,16 +40,18 @@ export class BraveCompiler extends Compiler {
     rewards_grant_dev_endpoint: 'dummy',
     rewards_grant_staging_endpoint: 'dummy',
     rewards_grant_prod_endpoint: 'dummy',
-    extra_cflags: ['-march=native'],
-    extra_cflags_cxx: ['-march=native'],
-    extra_ldflags: ['-march=native'],
   }
+  braveBrowserFolder: string
   braveCoreCacheFolder = path.join(os.tmpdir(), 'node_compiler', 'git', 'brave', 'brave-core')
+  braveCoreFolder: string
   buildConfig = 'Release'
+  chromiumFolder: string
+  nodeInstallationFolder = 'C:/portable/node/24.11.1'
+  nodeExecutableFile = path.join(this.nodeInstallationFolder, 'node.exe')
+  npmScriptFile = path.join(this.nodeInstallationFolder, 'node_modules', 'npm', 'bin', 'npm-cli.js')
   repo = 'brave/brave-browser'
   targetArch = 'x64'
   targetOs = 'win'
-  npmScriptFile = 'C:/portable/node/24.11.1/node_modules/npm/bin/npm-cli.js'
   constructor(options?: ConstructorParameters<typeof Compiler>[0]) {
     super({
       cloneMethod: 'direct',
@@ -56,49 +60,48 @@ export class BraveCompiler extends Compiler {
       ...options,
       clones: ['brave/brave-browser'],
     })
-    this.environmentVariables.set('NODE', 'C:/portable/node/24.11.1/node.exe')
-    this.environmentVariables.set('npm_node_execpath', 'C:/portable/node/24.11.1/node.exe')
+    this.braveBrowserFolder = this.fromHere('git', 'brave', 'brave-browser')
+    this.chromiumFolder = path.join(this.braveBrowserFolder, 'src')
+    this.braveCoreFolder = path.join(this.braveBrowserFolder, 'src', 'brave')
+    this.environmentVariables.set(this.nodeExecutableFile, this.nodeExecutableFile)
+    this.environmentVariables.set('npm_node_execpath', this.nodeExecutableFile)
     this.environmentVariables.set('npm_execpath', this.npmScriptFile)
-    this.environmentVariables.set('NODE_PATH', 'C:/portable/node/24.11.1/node_modules')
+    this.environmentVariables.set('NODE_PATH', path.join(this.nodeInstallationFolder, 'node_modules'))
+    this.environmentVariables.set('npm_package_engines_node', '>=24.11.1 <25.0.0')
+    this.environmentVariables.set('DEPOT_TOOLS_UPDATE', '0')
+    this.environmentVariables.set('GIT_CEILING_DIRECTORIES', this.braveBrowserFolder)
     this.environmentVariables.set('ENABLE_AI_CHAT', false)
     this.environmentVariables.set('ENABLE_BRAVE_AI_CHAT_AGENT_PROFILE', false)
-    this.environmentVariables.addPathItem('C:/portable/node/24.11.1')
-    this.environmentVariables.addPathItem('C:/portable/node/24.11.1/node_modules/npm/bin')
-    console.dir({compiler: this, env: this.environmentVariables.toFinalObject()}, {depth: null})
-  }
-
-  get braveBrowserFolder() {
-    return this.fromHere('git', 'brave', 'brave-browser')
-  }
-
-  get braveCoreFolder() {
-    return this.fromHere('git', 'brave', 'brave-browser', 'src', 'brave')
+    this.environmentVariables.set('BRAVE_SERVICES_KEY', 'dummy')
+    this.environmentVariables.set('GOOGLE_API_KEY', 'dummy')
+    this.environmentVariables.set('GOOGLE_DEFAULT_CLIENT_ID', 'dummy')
+    this.environmentVariables.set('GOOGLE_DEFAULT_CLIENT_SECRET', 'dummy')
+    this.environmentVariables.prependPathItem(path.join(this.nodeInstallationFolder, 'node_modules', 'npm', 'bin'))
+    this.environmentVariables.prependPathItem(this.nodeInstallationFolder)
+    console.dir({
+      compiler: this,
+      env: this.environmentVariables.toFinalObject(),
+    }, {depth: null})
   }
 
   get outputFile() {
     return this.fromHere('..', 'out', 'brave.exe')
   }
 
+  async applyCustomizations() {
+    debug('Disabling Brave Sync')
+    await this.applyPatch(this.fromBraveCoreFolder('components', 'brave_sync', 'features.cc'), /BASE_FEATURE\(\s*kBraveSync\s*,\s*base::FEATURE_ENABLED_BY_DEFAULT\s*\);/, 'BASE_FEATURE(kBraveSync, base::FEATURE_DISABLED_BY_DEFAULT);')
+    debug('Disabling Memory Saver (High Efficiency Mode)')
+    await this.applyPatch(this.fromChromiumFolder('components', 'performance_manager', 'public', 'features.cc'), /BASE_FEATURE\(\s*kHighEfficiencyModeAvailable\s*,\s*base::FEATURE_ENABLED_BY_DEFAULT\s*\);/, 'BASE_FEATURE(kHighEfficiencyModeAvailable, base::FEATURE_DISABLED_BY_DEFAULT);')
+    debug('Enabling Wide Address Bar by default')
+    await this.applyPatch(this.fromBraveCoreFolder('browser', 'brave_profile_prefs.cc'), /registry->RegisterBooleanPref\(kLocationBarIsWide,\s*false\);/, 'registry→RegisterBooleanPref(kLocationBarIsWide, true);')
+  }
+
   async copyBuiltExecutable() {
-    // It is seemingly always the first one, so we may be able to remove this complexity later
-    const candidates = [
-      this.fromChromiumFolder('out', this.buildConfig, 'brave.exe'),
-      this.fromHere('..', 'out', this.buildConfig, 'brave.exe'),
-      this.fromHere('..', 'out', `${this.buildConfig}_${this.targetArch}`, 'brave.exe'),
-      this.fromHere('..', 'out', `${this.targetOs}_${this.buildConfig}`, 'brave.exe'),
-    ]
-    const candidateResults = await Promise.all(candidates.map(async file => {
-      if (await fs.pathExists(file)) {
-        return file
-      }
-      return null
-    }))
-    const resolved = candidateResults.find(Boolean)
-    if (!resolved) {
-      throw new Error('Could not find built brave.exe after the build finished')
-    }
-    await fs.ensureDir(path.dirname(this.outputFile))
-    await fs.copyFile(resolved, this.outputFile)
+    const inputFile = this.fromChromiumFolder('out', this.buildConfig, 'brave.exe')
+    const outputFolder = path.dirname(this.outputFile)
+    await fs.ensureDir(outputFolder)
+    await fs.copyFile(inputFile, this.outputFile)
   }
 
   async disableBraveLeo() {
@@ -106,15 +109,15 @@ export class BraveCompiler extends Compiler {
   }
 
   fromBraveBrowserFolder(...fileRelative: Array<string>) {
-    return this.fromHere('git', 'brave', 'brave-browser', ...fileRelative)
+    return path.join(this.braveBrowserFolder, ...fileRelative)
   }
 
   fromBraveCoreFolder(...fileRelative: Array<string>) {
-    return this.fromHere('git', 'brave', 'brave-browser', 'src', 'brave', ...fileRelative)
+    return path.join(this.braveCoreFolder, ...fileRelative)
   }
 
   fromChromiumFolder(...fileRelative: Array<string>) {
-    return this.fromHere('git', 'brave', 'brave-browser', 'src', ...fileRelative)
+    return path.join(this.chromiumFolder, ...fileRelative)
   }
 
   async patchAiChatFeature() {
@@ -134,18 +137,28 @@ export class BraveCompiler extends Compiler {
       const to = `file://${this.braveCoreCacheFolder}`
       await this.applyPatch(file, from, to)
     }
-    await this.runCommand(['node', this.npmScriptFile, 'install'], {
+    await this.runCommand([this.nodeExecutableFile, this.npmScriptFile, 'install'], {
       cwdExtra: this.braveBrowserFolder,
     })
-    await this.runCommand(['node', this.npmScriptFile, 'run', 'init', '--', `--target_os=${this.targetOs}`, `--target_arch=${this.targetArch}`], {
+    await this.runCommand([this.nodeExecutableFile, this.npmScriptFile, 'run', 'init', '--', `--target_os=${this.targetOs}`, `--target_arch=${this.targetArch}`], {
       cwdExtra: this.braveBrowserFolder,
     })
-    await this.runCommand(['node', this.npmScriptFile, 'install'], {
+    await this.runCommand([this.nodeExecutableFile, this.npmScriptFile, 'install'], {
       cwdExtra: this.braveCoreFolder,
     })
-    await this.runCommand(['node', this.npmScriptFile, 'run', 'sync', '--', '--init', `--target_os=${this.targetOs}`, `--target_arch=${this.targetArch}`], {
+    debug('Initializing src as a git repo to satisfy gclient')
+    await this.runCommand(['git', 'init'], {cwdExtra: this.fromChromiumFolder()})
+    await this.runCommand(['git', 'remote', 'add', 'origin', 'https://github.com/brave/chromium'], {cwdExtra: this.fromChromiumFolder()})
+    await this.runCommand(['git', 'commit', '--allow-empty', '-m', 'init'], {cwdExtra: this.fromChromiumFolder()})
+    debug('Cloning depot_tools manually and patch git.bat')
+    const depotToolsFolder = this.fromBraveCoreFolder('vendor', 'depot_tools')
+    await this.runCommand(['git', 'clone', 'https://chromium.googlesource.com/chromium/tools/depot_tools.git', depotToolsFolder])
+    await this.runCommand(['cmd.exe', '/c', path.join(depotToolsFolder, 'bootstrap', 'win_tools.bat')])
+    await fs.outputFile(path.join(depotToolsFolder, 'git.bat'), '@echo off\ngit.exe %*')
+    await this.runCommand([this.nodeExecutableFile, 'src/brave/build/commands/scripts/sync.js', '--', '--init', `--target_os=${this.targetOs}`, `--target_arch=${this.targetArch}`], {
       cwdExtra: this.braveBrowserFolder,
     })
+    await this.applyCustomizations()
     await this.patchEnvFile(this.fromBraveCoreFolder('.env'))
     await this.disableBraveLeo()
     const gnArgs = Object.entries(BraveCompiler.gnOptions).flatMap(([key, value]) => {
@@ -153,7 +166,7 @@ export class BraveCompiler extends Compiler {
       const optionValue = JSON.stringify(value)
       return ['--gn', `${optionKey}:${optionValue}`]
     })
-    await this.runCommand(['node', this.npmScriptFile, 'run', 'build', '--', this.buildConfig, `--target_os=${this.targetOs}`, `--target_arch=${this.targetArch}`, ...gnArgs], {
+    await this.runCommand([this.nodeExecutableFile, this.npmScriptFile, 'run', 'build', '--', this.buildConfig, `--target_os=${this.targetOs}`, `--target_arch=${this.targetArch}`, ...gnArgs, '--ninja', 'j:1'], {
       cwdExtra: this.braveCoreFolder,
     })
     await this.copyBuiltExecutable()

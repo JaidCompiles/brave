@@ -1,0 +1,17 @@
+{
+  "name": "ansi-sequences",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "ANSI formatting utilities for terminal output",
+  "author": "Jaid <jaid.jsx@gmail.com> (https://github.com/Jaid)",
+  "funding": "https://github.com/sponsors/jaid",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jaid/node-scripts",
+    "directory": "lib/package/ansi-sequences"
+  },
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "bun test ./test"
+  }
+}
