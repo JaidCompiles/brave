@@ -41,6 +41,16 @@ export class EnvironmentVariables extends Map<string, boolean | number | string>
     }
     return environmentVariables
   }
+  static fromProcess() {
+    const environmentVariables = new EnvironmentVariables
+    for (const [key, value] of Object.entries(process.env)) {
+      if (value === undefined) {
+        continue
+      }
+      environmentVariables.set(key, EnvironmentVariables.parseValue(value))
+    }
+    return environmentVariables
+  }
   static joinPaths(paths: Arrayable<string>, splitter = EnvironmentVariables.pathSplitter) {
     return Array.isArray(paths) ? paths.join(splitter) : paths
   }
@@ -52,16 +62,6 @@ export class EnvironmentVariables extends Map<string, boolean | number | string>
       }
     }
     return result
-  }
-  static parseProcessEnv() {
-    const object: Record<string, boolean | number | string> = {}
-    for (const [key, value] of Object.entries(process.env)) {
-      if (value === undefined) {
-        continue
-      }
-      object[key] = EnvironmentVariables.parseValue(value)
-    }
-    return object
   }
   static parseValue(value: string) {
     const lowerValue = value.toLowerCase()
@@ -125,22 +125,14 @@ export class EnvironmentVariables extends Map<string, boolean | number | string>
     return lines.join('\n')
   }
   toFinalObject() {
-    const object = EnvironmentVariables.parseProcessEnv()
-    for (const [key, value] of this.entries()) {
-      object[key] = value
-    }
-    return object
+    return EnvironmentVariables.merge(EnvironmentVariables.fromProcess(), this).toObject()
   }
   toFinalStringObject() {
-    const object = {...process.env}
-    for (const [key, value] of this.entries()) {
-      object[key] = String(value)
-    }
-    return object
+    return EnvironmentVariables.merge(EnvironmentVariables.fromProcess(), this).toStringObject()
   }
   toObject() {
     const object: Record<string, boolean | number | string> = {}
-    for (const [key, value] of this.entries()) {
+    for (const [key, value] of this) {
       object[key] = value
     }
     return object
@@ -156,7 +148,7 @@ export class EnvironmentVariables extends Map<string, boolean | number | string>
   }
   toStringObject() {
     const object: Record<string, string> = {}
-    for (const [key, value] of this.entries()) {
+    for (const [key, value] of this) {
       object[key] = String(value)
     }
     return object
