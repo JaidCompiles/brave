@@ -22,6 +22,15 @@ export class EnvironmentVariables extends Map<string, boolean | number | string>
     }
     return environmentVariables
   }
+  static async fromEnvFile(file: string) {
+    const {default: fs} = await import('fs-extra')
+    const fileExists = await fs.pathExists(file)
+    if (!fileExists) {
+      return new EnvironmentVariables
+    }
+    const contents = await fs.readFile(file)
+    return EnvironmentVariables.fromEnvContents(contents)
+  }
   static fromObject(object: Record<string, boolean | number | string | undefined>) {
     const environmentVariables = new EnvironmentVariables
     for (const [key, value] of Object.entries(object)) {
@@ -35,10 +44,10 @@ export class EnvironmentVariables extends Map<string, boolean | number | string>
   static joinPaths(paths: Arrayable<string>, splitter = EnvironmentVariables.pathSplitter) {
     return Array.isArray(paths) ? paths.join(splitter) : paths
   }
-  static merge(...environmentVariablesList: Array<EnvironmentVariables>) {
+  static merge(...environmentVariables: Array<EnvironmentVariables>) {
     const result = new EnvironmentVariables
-    for (const environmentVariables of environmentVariablesList) {
-      for (const [key, value] of environmentVariables.entries()) {
+    for (const environmentVariablesItem of environmentVariables) {
+      for (const [key, value] of environmentVariablesItem.entries()) {
         result.set(key, value)
       }
     }
@@ -135,6 +144,15 @@ export class EnvironmentVariables extends Map<string, boolean | number | string>
       object[key] = value
     }
     return object
+  }
+  toSorted(collator: Intl.Collator = new Intl.Collator('en')) {
+    const sorted = new EnvironmentVariables
+    const keys = this.keys().toArray().toSorted((a, b) => collator.compare(a, b))
+    for (const key of keys) {
+      const value = this.get(key)!
+      sorted.set(key, value)
+    }
+    return sorted
   }
   toStringObject() {
     const object: Record<string, string> = {}
