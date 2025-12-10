@@ -2,9 +2,9 @@
   "name": "brave",
   "version": "0.1.0",
   "type": "module",
+  "private": true,
   "scripts": {
-    "test": "bun test",
-    "start": "NODE_DEBUG=BraveCompiler bun src/main.ts &> temp/brave-compile.log"
+    "start": "FORCE_COLOR=3 NODE_DEBUG=BraveCompiler bun src/main.ts &> temp/brave-compile.log"
   },
   "repository": {
     "type": "git",
