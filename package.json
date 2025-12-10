@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "bun test",
-    "start": "bun src/main.ts"
+    "start": "NODE_DEBUG=BraveCompiler bun src/main.ts &> temp/brave-compile.log"
   },
   "repository": {
     "type": "git",
@@ -27,6 +27,8 @@
     "fs-extra": "^11.3.2",
     "lodash-es": "^4.17.21",
     "replace-in-file": "^8.4.0",
+    "sharp": "^0.34.5",
+    "sharp-ico": "^0.1.5",
     "zeug": "^2.1.0"
   }
 }

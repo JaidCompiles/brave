@@ -62,20 +62,9 @@ export class Compiler {
     }
   }
 
-  async addEnvironmentVariable(environmentPath: string, key: string, value: string) {
-    const fullPath = path.isAbsolute(environmentPath) ? environmentPath : this.fromHere(environmentPath)
-    await fs.ensureFile(fullPath)
-    const current = await fs.readFile(fullPath, 'utf8')
-    const line = `${key}=${value}`
-    const safeKey = key.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`)
-    const pattern = new RegExp(`^${safeKey}=.*$`, 'm')
-    const next = pattern.test(current) ? current.replace(pattern, line) : `${current.trimEnd()}\n${line}\n`
-    await fs.writeFile(fullPath, next)
-  }
-
   async applyPatch(options: FirstParameter<typeof replaceInFile>) {
-    const filesResolved = lodash.castArray(options.files).map(fileRelative => this.fromHere(fileRelative))
-    await replaceInFile({
+    const filesResolved = options.files ? lodash.castArray(options.files).map(fileRelative => this.fromHere(fileRelative)) : this.fromHere('**', '*')
+    return replaceInFile({
       ...options,
       files: filesResolved,
     })
@@ -87,10 +76,6 @@ export class Compiler {
    * If cache is enabled, will also keep an untouched copy in $TEMP/node_compiler/git/{owner}/{repo}
    */
   async cloneGithubRepo(slug: string, method: 'direct' | 'https' | 'ssh' = this.options.cloneMethod) {
-    const [owner, repo] = slug.split('/')
-    if (!repo) {
-      throw new Error(`Invalid slug: ${slug}`)
-    }
     const projectTarget = this.getRepoFolder(slug)
     const cacheTarget = this.getRepoFolder(slug, 'cache')
     const downloadTarget = this.options.cacheClones ? cacheTarget : projectTarget
@@ -199,6 +184,9 @@ export class Compiler {
   async patchEnvFileWith(fileRelative: string, environmentVariables: EnvironmentVariables) {
     const file = this.fromHere(fileRelative)
     const originalContents = await fs.readFile(file, 'utf8')
+    if (!originalContents.trim()) {
+      return this.outputEnv(file)
+    }
     const originalEnvironment = EnvironmentVariables.fromEnvContents(originalContents)
     const mergedEnvironment = EnvironmentVariables.merge(originalEnvironment, environmentVariables)
     const newContents = mergedEnvironment.toEnvContents()
