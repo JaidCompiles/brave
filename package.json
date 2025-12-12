@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "start": "FORCE_COLOR=3 NODE_DEBUG=BraveCompiler bun src/main.ts &> temp/brave-compile.log"
+    "start": "bun src/main.ts > temp/brave-compile.log 2>&1"
   },
   "repository": {
     "type": "git",

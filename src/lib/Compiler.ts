@@ -64,10 +64,12 @@ export class Compiler {
 
   async applyPatch(options: FirstParameter<typeof replaceInFile>) {
     const filesResolved = options.files ? lodash.castArray(options.files).map(fileRelative => this.fromHere(fileRelative)) : this.fromHere('**', '*')
-    return replaceInFile({
+    const result = await replaceInFile({
       ...options,
       files: filesResolved,
     })
+    console.dir({patchedFiles: result.map(r => r.file)}, {depth: null})
+    return result
   }
 
   /**

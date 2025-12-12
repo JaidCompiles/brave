@@ -47,9 +47,6 @@ const gnOptions = {
   extra_cflags_cxx: ['-march=znver2'],
   extra_ldflags: ['-march=znver2'],
 } as Dict
-if (lowMemory) {
-  gnOptions.concurrent_links = 1
-}
 
 export class BraveCompiler extends Compiler {
   static gnOptions = gnOptions
@@ -75,12 +72,12 @@ export class BraveCompiler extends Compiler {
     this.braveBrowserFolder = this.fromHere('git', 'brave', 'brave-browser')
     this.chromiumFolder = path.join(this.braveBrowserFolder, 'src')
     this.braveCoreFolder = path.join(this.braveBrowserFolder, 'src', 'brave')
-    this.environmentVariables.set(this.nodeExecutableFile, this.nodeExecutableFile)
     this.environmentVariables.set('npm_node_execpath', this.nodeExecutableFile)
     this.environmentVariables.set('npm_execpath', this.npmScriptFile)
     this.environmentVariables.set('NODE_PATH', path.join(this.nodeInstallationFolder, 'node_modules'))
     this.environmentVariables.set('npm_package_engines_node', '>=24.11.1 <25.0.0')
-    this.environmentVariables.set('DEPOT_TOOLS_UPDATE', '0')
+    this.environmentVariables.set('DEPOT_TOOLS_UPDATE', 0)
+    this.environmentVariables.set('DEPOT_TOOLS_WIN_TOOLCHAIN', 0)
     this.environmentVariables.set('GIT_CEILING_DIRECTORIES', this.braveBrowserFolder)
     this.environmentVariables.set('ENABLE_AI_CHAT', false)
     this.environmentVariables.set('ENABLE_BRAVE_AI_CHAT_AGENT_PROFILE', false)
@@ -147,9 +144,9 @@ export class BraveCompiler extends Compiler {
     })
     debug('Disabling Spell Check')
     await this.applyPatch({
-      files: this.fromChromiumFolder('components', 'spellcheck', 'common', 'spellcheck_features.cc'),
-      from: /BASE_FEATURE\(\s*kSpellCheck\s*,\s*base::FEATURE_ENABLED_BY_DEFAULT\s*\)/,
-      to: 'BASE_FEATURE(kSpellCheck, base::FEATURE_DISABLED_BY_DEFAULT)',
+      files: this.fromChromiumFolder('chrome', 'browser', 'spellchecker', 'spellcheck_factory.cc'),
+      from: /user_prefs->RegisterBooleanPref\(spellcheck::prefs::kSpellCheckEnable,\s*true,/,
+      to: 'user_prefs->RegisterBooleanPref(spellcheck::prefs::kSpellCheckEnable, false,',
     })
     debug('Disabling Brave Translate')
     await this.applyPatch({
@@ -347,35 +344,6 @@ export class BraveCompiler extends Compiler {
     await this.runNpmCommand(['install'], {
       cwdExtra: this.braveCoreFolder,
     })
-    // TODO Evaluate necessity - Not sure if this is still needed
-    // {
-    // await this.applyPatch({
-    //   files: this.fromBraveCoreFolder('build', 'commands', 'lib', 'depotTools.js'),
-    //   from: `    if (!fs.existsSync(config.depotToolsDir) || wasInterrupted) {
-    //   Log.progressScope('install depot_tools', () => {
-    //     util.run(
-    //       'git',
-    //       ['clone', config.depotToolsRepo, config.depotToolsDir],
-    //       options,
-    //     )
-    //   })
-    // }`,
-    //   to: String.raw`    if (!fs.existsSync(config.depotToolsDir) || wasInterrupted) {
-    //   Log.progressScope('install depot_tools', () => {
-    //     util.run(
-    //       'git',
-    //       ['clone', config.depotToolsRepo, config.depotToolsDir],
-    //       options,
-    //     )
-    //     bootstrapDepotTools(options)
-    //     if (process.platform === 'win32') {
-    //        const gitBatPath = path.join(config.depotToolsDir, 'git.bat')
-    //        fs.writeFileSync(gitBatPath, '@echo off\\r\\n"C:\\\\Program Files\\\\Git\\\\cmd\\\\git.exe" %*')
-    //     }
-    //   })
-    // }`,
-    // })
-    // }
     await this.runNpmCommand(['run', 'sync', '--', '--init', '--target_os', this.targetOs, '--target_arch', this.targetArch], {
       cwdExtra: this.braveCoreFolder,
     })
@@ -386,7 +354,7 @@ export class BraveCompiler extends Compiler {
       const optionValue = JSON.stringify(value)
       return ['--gn', `${optionKey}:${optionValue}`]
     })
-    await this.runNpmCommand(['run', 'build', '--', this.buildConfig, '--target_os', this.targetOs, '--target_arch', this.targetArch, ...gnArgs, ...lowMemory ? ['--jobs', '1'] : []], {
+    await this.runNpmCommand(['run', 'build', '--', this.buildConfig, '--target_os', this.targetOs, '--target_arch', this.targetArch, ...gnArgs, ...lowMemory ? ['--gn', 'jobs:1'] : []], {
       cwdExtra: this.braveCoreFolder,
     })
     const outputFile = this.fromChromiumFolder('out', this.buildConfig, 'jave.exe')
