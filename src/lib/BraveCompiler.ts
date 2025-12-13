@@ -1,5 +1,6 @@
 import type {Dict, FirstParameter, SecondParameter} from 'more-types'
 
+import {pathToFileURL} from 'node:url'
 import os from 'os'
 import * as util from 'util'
 
@@ -102,11 +103,11 @@ export class BraveCompiler extends Compiler {
       to: 'BASE_FEATURE(kBraveSync, base::FEATURE_DISABLED_BY_DEFAULT)',
     })
     debug('Disabling Memory Saver (High Efficiency Mode)')
-    // await this.applyPatch({
-    //   files: this.fromChromiumFolder('components', 'performance_manager', 'features.cc'),
-    //   from: /BASE_FEATURE\(\s*kHighEfficiencyModeAvailable\s*,\s*base::FEATURE_ENABLED_BY_DEFAULT\s*\)/,
-    //   to: 'BASE_FEATURE(kHighEfficiencyModeAvailable, base::FEATURE_DISABLED_BY_DEFAULT)',
-    // })
+    await this.applyPatch({
+      files: this.fromChromiumFolder('components', 'performance_manager', 'features.cc'),
+      from: /BASE_FEATURE\(\s*kHighEfficiencyModeAvailable\s*,\s*base::FEATURE_ENABLED_BY_DEFAULT\s*\)/,
+      to: 'BASE_FEATURE(kHighEfficiencyModeAvailable, base::FEATURE_DISABLED_BY_DEFAULT)',
+    })
     debug('Enabling Wide Address Bar by default')
     await this.applyPatch({
       files: this.fromBraveCoreFolder('browser', 'brave_profile_prefs.cc'),
@@ -329,10 +330,11 @@ export class BraveCompiler extends Compiler {
     // }
     const cacheFolderExists = await fs.pathExists(this.braveCoreCacheFolder)
     if (cacheFolderExists) {
+      const braveCoreCacheUrl = pathToFileURL(this.braveCoreCacheFolder).href
       await this.applyPatch({
         files: this.fromBraveBrowserFolder('package.json'),
         from: /https:\/\/github\.com\/brave\/brave-core\.git/g,
-        to: `file://${this.braveCoreCacheFolder}`,
+        to: braveCoreCacheUrl,
       })
     }
     await this.runNpmCommand(['install'], {

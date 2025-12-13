@@ -68,7 +68,12 @@ export class Compiler {
       ...options,
       files: filesResolved,
     })
-    console.dir({patchedFiles: result.map(r => r.file)}, {depth: null})
+    const changedFiles = result.filter((r: any) => r?.hasChanged).map((r: any) => r.file)
+    console.dir({patchedFiles: changedFiles}, {depth: null})
+    if (changedFiles.length === 0) {
+      const filesPreview = Array.isArray(filesResolved) ? filesResolved.slice(0, 5) : filesResolved
+      console.warn('Patch made no changes', {files: filesPreview})
+    }
     return result
   }
 
