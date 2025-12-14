@@ -265,4 +265,9 @@ export class Compiler {
     }
     return subprocess
   }
+
+  async writeFile(fileRelative: string, content: Buffer | string) {
+    const file = this.fromHere(fileRelative)
+    return Bun.write(file, content)
+  }
 }

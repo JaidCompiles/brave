@@ -12,7 +12,6 @@ import sharpIco from 'sharp-ico'
 import {Compiler} from './Compiler.ts'
 
 const debug = util.debuglog('BraveCompiler')
-const lowMemory = os.totalmem() < 64_000_000_000
 const gnOptions = {
   enable_ai_chat: false,
   enable_brave_ai_chat_agent_profile: false,
@@ -44,25 +43,39 @@ const gnOptions = {
   rewards_grant_dev_endpoint: 'dummy',
   rewards_grant_staging_endpoint: 'dummy',
   rewards_grant_prod_endpoint: 'dummy',
-  extra_cflags: ['-march=znver2'],
-  extra_cflags_cxx: ['-march=znver2'],
-  extra_ldflags: ['-march=znver2'],
+  extra_cflags: [],
+  extra_cflags_cxx: [],
+  extra_ldflags: [],
 } as Dict
+
+type InputOptions = ConstructorParameters<typeof Compiler>[0] & {
+  arch: 'arm64' | 'x64'
+  buildTarget: 'Debug' | 'Release'
+  flavor: 'brave' | 'jave'
+  lowMemory?: boolean
+  nodeInstallationFolder: string
+  os: 'linux' | 'win'
+  personalArch?: string
+}
 
 export class BraveCompiler extends Compiler {
   static gnOptions = gnOptions
   braveBrowserFolder: string
   braveCoreCacheFolder = path.join(os.tmpdir(), 'node_compiler', 'git', 'brave', 'brave-core')
   braveCoreFolder: string
-  buildConfig = 'Release'
+  buildTarget: 'Debug' | 'Release' = 'Release'
   chromiumFolder: string
-  nodeInstallationFolder = 'C:/portable/node/24.11.1'
-  nodeExecutableFile = path.join(this.nodeInstallationFolder, 'node.exe')
-  npmScriptFile = path.join(this.nodeInstallationFolder, 'node_modules', 'npm', 'bin', 'npm-cli.js')
+  flavor: 'brave' | 'jave'
+  gnOptions = {...BraveCompiler.gnOptions}
+  lowMemory: boolean = false
+  nodeExecutableFile: string
+  nodeInstallationFolder: string
+  npmScriptFile: string
   repo = 'brave/brave-browser'
-  targetArch = 'x64'
-  targetOs = 'win'
-  constructor(options?: ConstructorParameters<typeof Compiler>[0]) {
+  shouldCustomize: boolean
+  targetArch: 'arm64' | 'x64'
+  targetOs: 'linux' | 'win'
+  constructor(options: InputOptions) {
     super({
       cloneMethod: 'direct',
       folder: path.join(import.meta.dir, '..', '..', 'temp', 'brave'),
@@ -70,18 +83,33 @@ export class BraveCompiler extends Compiler {
       ...options,
       clones: ['brave/brave-browser'],
     })
+    if (options.personalArch) {
+      this.gnOptions.extra_cflags = [...(this.gnOptions.extra_cflags as Array<string>), `-march=${options.personalArch}`]
+      this.gnOptions.extra_cflags_cxx = [...(this.gnOptions.extra_cflags_cxx as Array<string>), `-march=${options.personalArch}`]
+      this.gnOptions.extra_ldflags = [...(this.gnOptions.extra_ldflags as Array<string>), `-march=${options.personalArch}`]
+    }
+    this.lowMemory = options.lowMemory ?? false
+    this.buildTarget = options.buildTarget
+    this.flavor = options.flavor
+    this.shouldCustomize = this.flavor === 'jave'
+    this.targetArch = options.arch
+    this.targetOs = options.os
+    this.nodeInstallationFolder = options.nodeInstallationFolder
+    this.nodeExecutableFile = path.join(this.nodeInstallationFolder, 'node.exe')
+    this.npmScriptFile = path.join(this.nodeInstallationFolder, 'node_modules', 'npm', 'bin', 'npm-cli.js')
     this.braveBrowserFolder = this.fromHere('git', 'brave', 'brave-browser')
     this.chromiumFolder = path.join(this.braveBrowserFolder, 'src')
     this.braveCoreFolder = path.join(this.braveBrowserFolder, 'src', 'brave')
     this.environmentVariables.set('npm_node_execpath', this.nodeExecutableFile)
     this.environmentVariables.set('npm_execpath', this.npmScriptFile)
     this.environmentVariables.set('NODE_PATH', path.join(this.nodeInstallationFolder, 'node_modules'))
-    this.environmentVariables.set('npm_package_engines_node', '>=24.11.1 <25.0.0')
     this.environmentVariables.set('DEPOT_TOOLS_UPDATE', 0)
     this.environmentVariables.set('DEPOT_TOOLS_WIN_TOOLCHAIN', 0)
     this.environmentVariables.set('GIT_CEILING_DIRECTORIES', this.braveBrowserFolder)
-    this.environmentVariables.set('ENABLE_AI_CHAT', false)
-    this.environmentVariables.set('ENABLE_BRAVE_AI_CHAT_AGENT_PROFILE', false)
+    if (this.shouldCustomize) {
+      this.environmentVariables.set('ENABLE_AI_CHAT', false)
+      this.environmentVariables.set('ENABLE_BRAVE_AI_CHAT_AGENT_PROFILE', false)
+    }
     this.environmentVariables.set('BRAVE_SERVICES_KEY', 'dummy')
     this.environmentVariables.set('GOOGLE_API_KEY', 'dummy')
     this.environmentVariables.set('GOOGLE_DEFAULT_CLIENT_ID', 'dummy')
@@ -318,6 +346,11 @@ export class BraveCompiler extends Compiler {
   fromChromiumFolder(...fileRelative: Array<string>) {
     return path.join(this.chromiumFolder, ...fileRelative)
   }
+  async init() {
+    await super.init()
+    await this.writeFile('bin/git.bat', '@echo off\ngit.exe %*')
+    this.environmentVariables.prependPathItem(this.fromHere('bin'))
+  }
   async run() {
     await this.init()
     // TODO Evaluate necessity - Not sure if this is still needed
@@ -349,17 +382,24 @@ export class BraveCompiler extends Compiler {
     await this.runNpmCommand(['run', 'sync', '--', '--init', '--target_os', this.targetOs, '--target_arch', this.targetArch], {
       cwdExtra: this.braveCoreFolder,
     })
-    await this.applyCustomizations()
+    if (this.shouldCustomize) {
+      await this.applyCustomizations()
+    }
     await this.patchEnvFile(this.fromBraveCoreFolder('.env'))
-    const gnArgs = Object.entries(BraveCompiler.gnOptions).flatMap(([key, value]) => {
-      const optionKey = key
-      const optionValue = JSON.stringify(value)
-      return ['--gn', `${optionKey}:${optionValue}`]
-    })
-    await this.runNpmCommand(['run', 'build', '--', this.buildConfig, '--target_os', this.targetOs, '--target_arch', this.targetArch, ...gnArgs, ...lowMemory ? ['--gn', 'jobs:1'] : []], {
-      cwdExtra: this.braveCoreFolder,
-    })
-    const outputFile = this.fromChromiumFolder('out', this.buildConfig, 'jave.exe')
+    {
+      const args = ['run', 'gn', '--', this.buildTarget, '--target_os', this.targetOs, '--target_arch', this.targetArch]
+      for (const [optionName, optionValueRaw] of Object.entries(this.gnOptions)) {
+        const optionValue = JSON.stringify(optionValueRaw)
+        args.push('--gn', `${optionName}:${optionValue}`)
+      }
+      if (this.lowMemory) {
+        args.push('--gn', 'jobs:1')
+      }
+      await this.runNpmCommand(args, {
+        cwdExtra: this.braveCoreFolder,
+      })
+    }
+    const outputFile = this.fromChromiumFolder('out', this.buildTarget, 'jave.exe')
     const outputFileExists = await fs.pathExists(outputFile)
     if (!outputFileExists) {
       throw new Error(`Build completed but output file not found: ${outputFile}`)

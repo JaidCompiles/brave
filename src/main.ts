@@ -4,5 +4,15 @@ import {BraveCompiler} from './lib/BraveCompiler.ts'
 
 const compiler = new BraveCompiler({
   folder: path.join('C:', 'temp', path.parentName(import.meta.dir)!),
+  nodeInstallationFolder: 'C:/portable/node/24.11.1',
+  arch: 'x64',
+  os: 'win',
+  /**
+   * This option can be used for skipping all customizations and compiling vanilla Brave instead.
+   * This is useful for determining whether the compilation setup at its core cause a breakage or the customizations do.
+   */
+  flavor: (process.env.FLAVOR as 'brave' | 'jave' | undefined) ?? 'jave',
+  buildTarget: 'Release',
+  lowMemory: true,
 })
 await compiler.run()
