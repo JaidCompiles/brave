@@ -13,6 +13,6 @@ const compiler = new BraveCompiler({
    */
   flavor: (process.env.FLAVOR as 'brave' | 'jave' | undefined) ?? 'jave',
   buildTarget: 'Release',
-  lowMemory: true,
+  lowMemory: ((process.env.LOW_MEMORY as '0' | '1' | undefined) ?? '0') === '1',
 })
 await compiler.run()
