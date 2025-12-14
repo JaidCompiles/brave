@@ -274,7 +274,7 @@ export class BraveCompiler extends Compiler {
 
   async applyIconCustomizations() {
     debug('Applying icon customizations')
-    const sourceIcon = path.join(import.meta.dir, '..', '..', 'resources', 'jave.jxl')
+    const sourceIcon = path.join(import.meta.dir, '..', '..', 'assets', 'jave.jxl')
     const sourceBuffer = await sharp(sourceIcon)
       .resize({
         width: 256,
