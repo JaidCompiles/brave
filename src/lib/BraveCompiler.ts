@@ -78,7 +78,6 @@ export class BraveCompiler extends Compiler {
   constructor(options: InputOptions) {
     super({
       cloneMethod: 'direct',
-      folder: path.join(import.meta.dir, '..', '..', 'temp', 'brave'),
       cacheClones: true,
       ...options,
       clones: ['brave/brave-browser'],
