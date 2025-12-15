@@ -113,7 +113,13 @@ export class BraveCompiler extends Compiler {
     this.environmentVariables.set('GOOGLE_API_KEY', 'dummy')
     this.environmentVariables.set('GOOGLE_DEFAULT_CLIENT_ID', 'dummy')
     this.environmentVariables.set('GOOGLE_DEFAULT_CLIENT_SECRET', 'dummy')
-    this.environmentVariables.prependPathItem(path.join(this.braveCoreFolder, 'vendor', 'depot_tools'))
+    const temporaryFolder = path.join(this.braveBrowserFolder, 'tmp')
+    this.environmentVariables.set('TEMP', temporaryFolder)
+    this.environmentVariables.set('TMP', temporaryFolder)
+    this.environmentVariables.set('TMPDIR', temporaryFolder)
+    this.environmentVariables.set('VPYTHON_VIRTUALENV_ROOT', path.join(this.braveBrowserFolder, 'vpython_root'))
+    this.environmentVariables.set('CIPD_CACHE_DIR', path.join(this.braveBrowserFolder, 'cipd_cache'))
+    this.environmentVariables.prependPathItem(path.join(this.braveBrowserFolder, 'depot_tools'))
     this.environmentVariables.prependPathItem(path.join(this.nodeInstallationFolder, 'node_modules', 'npm', 'bin'))
     this.environmentVariables.prependPathItem(this.nodeInstallationFolder)
     debug('%s', {
@@ -347,19 +353,22 @@ export class BraveCompiler extends Compiler {
   }
   async init() {
     await super.init()
+    await fs.ensureDir(path.join(this.braveBrowserFolder, 'tmp'))
     await this.writeFile('bin/git.bat', '@echo off\ngit.exe %*')
     this.environmentVariables.prependPathItem(this.fromHere('bin'))
   }
   async run() {
     await this.init()
-    // TODO Evaluate necessity - Not sure if this is still needed
-    // {
-    // await this.applyPatch({
-    //   files: this.fromBraveBrowserFolder('scripts', 'init.js'),
-    //   from: /util\.run\(npmCommand,\s*\['install'\],\s*\{\s*cwd:\s*braveCoreDir\s*\}\)/,
-    //   to: "// util.run(npmCommand, ['install'], { cwd: braveCoreDir })",
-    // })
-    // }
+    await this.applyPatch({
+      files: this.fromBraveBrowserFolder('scripts', 'init.js'),
+      from: /util\.run\(npmCommand,\s*\['install'\],\s*\{\s*cwd:\s*braveCoreDir\s*\}\)/,
+      to: "// util.run(npmCommand, ['install'], { cwd: braveCoreDir })",
+    })
+    await this.applyPatch({
+      files: this.fromBraveBrowserFolder('scripts', 'init.js'),
+      from: /util\.run\(npmCommand,\s*\['run',\s*'sync'\s*,'--',\s*'--init'\]\.concat\(process\.argv\.slice\(2\)\),[\s\S]+?\}\)/,
+      to: "/* util.run(npmCommand, ['run', 'sync', '--', '--init']...) */",
+    })
     const cacheFolderExists = await fs.pathExists(this.braveCoreCacheFolder)
     if (cacheFolderExists) {
       const braveCoreCacheUrl = pathToFileURL(this.braveCoreCacheFolder).href
@@ -384,9 +393,14 @@ export class BraveCompiler extends Compiler {
     if (this.shouldCustomize) {
       await this.applyCustomizations()
     }
+    await this.applyPatch({
+      files: this.fromBraveCoreFolder('build', 'commands', 'scripts', 'gn.js'),
+      from: /\.allowUnknownOption\(true\)/,
+      to: ".option('--gn <gn_arg>', 'GN args', (val, memo) => { memo.push(val); return memo; }, [])\n  .allowUnknownOption(true)",
+    })
     await this.patchEnvFile(this.fromBraveCoreFolder('.env'))
     {
-      const args = ['run', 'gn', '--', this.buildTarget, '--target_os', this.targetOs, '--target_arch', this.targetArch]
+      const args = ['run', 'gn', '--', 'gen', this.buildTarget, '--target_os', this.targetOs, '--target_arch', this.targetArch]
       for (const [optionName, optionValueRaw] of Object.entries(this.gnOptions)) {
         const optionValue = JSON.stringify(optionValueRaw)
         args.push('--gn', `${optionName}:${optionValue}`)
@@ -398,7 +412,8 @@ export class BraveCompiler extends Compiler {
         cwdExtra: this.braveCoreFolder,
       })
     }
-    const outputFile = this.fromChromiumFolder('out', this.buildTarget, 'jave.exe')
+    const executableName = this.flavor === 'jave' ? 'jave.exe' : 'brave.exe'
+    const outputFile = this.fromChromiumFolder('out', this.buildTarget, executableName)
     const outputFileExists = await fs.pathExists(outputFile)
     if (!outputFileExists) {
       throw new Error(`Build completed but output file not found: ${outputFile}`)

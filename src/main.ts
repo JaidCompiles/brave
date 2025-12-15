@@ -11,7 +11,7 @@ const compiler = new BraveCompiler({
    * This option can be used for skipping all customizations and compiling vanilla Brave instead.
    * This is useful for determining whether the compilation setup at its core cause a breakage or the customizations do.
    */
-  flavor: (process.env.FLAVOR as 'brave' | 'jave' | undefined) ?? 'jave',
+  flavor: (process.env.FLAVOR as 'brave' | 'jave' | undefined) ?? 'brave',
   buildTarget: 'Release',
   lowMemory: ((process.env.LOW_MEMORY as '0' | '1' | undefined) ?? '0') === '1',
 })
