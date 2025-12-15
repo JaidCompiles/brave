@@ -75,6 +75,7 @@ export class BraveCompiler extends Compiler {
   shouldCustomize: boolean
   targetArch: 'arm64' | 'x64'
   targetOs: 'linux' | 'win'
+  tempFolder: string
   constructor(options: InputOptions) {
     super({
       cloneMethod: 'direct',
@@ -113,10 +114,10 @@ export class BraveCompiler extends Compiler {
     this.environmentVariables.set('GOOGLE_API_KEY', 'dummy')
     this.environmentVariables.set('GOOGLE_DEFAULT_CLIENT_ID', 'dummy')
     this.environmentVariables.set('GOOGLE_DEFAULT_CLIENT_SECRET', 'dummy')
-    const temporaryFolder = path.join(this.braveBrowserFolder, 'tmp')
-    this.environmentVariables.set('TEMP', temporaryFolder)
-    this.environmentVariables.set('TMP', temporaryFolder)
-    this.environmentVariables.set('TMPDIR', temporaryFolder)
+    this.tempFolder = path.join(this.fromHere('temp'))
+    this.environmentVariables.set('TEMP', this.tempFolder)
+    this.environmentVariables.set('TMP', this.tempFolder)
+    this.environmentVariables.set('TMPDIR', this.tempFolder)
     this.environmentVariables.set('VPYTHON_VIRTUALENV_ROOT', path.join(this.braveBrowserFolder, 'vpython_root'))
     this.environmentVariables.set('CIPD_CACHE_DIR', path.join(this.braveBrowserFolder, 'cipd_cache'))
     this.environmentVariables.prependPathItem(path.join(this.braveBrowserFolder, 'depot_tools'))
@@ -353,7 +354,7 @@ export class BraveCompiler extends Compiler {
   }
   async init() {
     await super.init()
-    await fs.ensureDir(path.join(this.braveBrowserFolder, 'tmp'))
+    await fs.ensureDir(this.tempFolder)
     await this.writeFile('bin/git.bat', '@echo off\ngit.exe %*')
     this.environmentVariables.prependPathItem(this.fromHere('bin'))
   }
